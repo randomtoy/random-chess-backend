@@ -1,10 +1,10 @@
-name: Deploy
+name: Deploy (manual)
 
 on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Image tag to deploy (e.g. 1.2.3)"
+        description: "Image tag to deploy (e.g. 1.2.3 or sha-abc1234)"
         required: true
         type: string
       environment:
@@ -16,18 +16,15 @@ on:
           - prod
           - dev
       namespace:
-        description: "Kubernetes namespace"
+        description: "Kubernetes namespace (default: env-based)"
         required: false
-        default: "random-chess"
+        default: ""
         type: string
       dry_run:
         description: "Dry run only (no actual deploy)"
         required: false
         default: false
         type: boolean
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
 
 permissions:
   contents: read
@@ -36,14 +33,10 @@ jobs:
   deploy:
     name: Deploy to k3s
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'prod' }}
-    # For workflow_run trigger: only run on success
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    environment: ${{ github.event.inputs.environment }}
     env:
-      ENVIRONMENT: ${{ github.event.inputs.environment || 'prod' }}
-      NAMESPACE: ${{ github.event.inputs.namespace || 'random-chess' }}
+      ENVIRONMENT: ${{ github.event.inputs.environment }}
+      NAMESPACE: ${{ github.event.inputs.namespace != '' && github.event.inputs.namespace || (github.event.inputs.environment == 'dev' && 'random-chess-dev' || 'random-chess') }}
       DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
 
     steps:
@@ -56,17 +49,6 @@ jobs:
         uses: azure/setup-helm@v4
         with:
           version: v3.14.0
-
-      - name: Resolve image tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "value=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
-          else
-            # Extract tag from the triggering release ref (refs/tags/vX.Y.Z)
-            RAW="${{ github.event.workflow_run.head_branch }}"
-            echo "value=${RAW#refs/tags/v}" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Write SSH key
         run: |
@@ -99,7 +81,7 @@ jobs:
           fi
 
           ./hack/deploy.sh \
-            --image-tag "${{ steps.tag.outputs.value }}" \
+            --image-tag "${{ github.event.inputs.image_tag }}" \
             --namespace "$NAMESPACE" \
             --kubeconfig /tmp/kubeconfig \
             --values "$VALUES_FILE" \
@@ -108,5 +90,4 @@ jobs:
 
       - name: Clean up credentials
         if: always()
-        run: |
-          rm -f ~/.ssh/deploy_key /tmp/kubeconfig
+        run: rm -f ~/.ssh/deploy_key /tmp/kubeconfig
