@@ -23,6 +23,8 @@ set -euo pipefail
 # Defaults
 SSH_PORT="${SSH_PORT:-22}"
 SSH_KEY_FILE="${SSH_KEY_FILE:-$HOME/.ssh/id_rsa}"
+# Expand leading tilde (GitHub Actions env vars don't expand ~ in YAML values)
+SSH_KEY_FILE="${SSH_KEY_FILE/#\~/$HOME}"
 K8S_API_HOST="${K8S_API_HOST:-127.0.0.1}"
 K8S_API_PORT="${K8S_API_PORT:-6443}"
 LOCAL_PORT="${LOCAL_PORT:-16443}"
