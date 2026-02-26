@@ -1,0 +1,34 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "random-chess-backend.fullname" . }}
+  labels:
+    {{- include "random-chess-backend.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "random-chess-backend.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: {{ .Values.service.targetPort }}
+          protocol: TCP
+  egress:
+    # Allow DNS
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Allow HTTPS to external services (databases, APIs)
+    - ports:
+        - port: 443
+          protocol: TCP
+    # Allow PostgreSQL (if used)
+    - ports:
+        - port: 5432
+          protocol: TCP
+{{- end }}

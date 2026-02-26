@@ -1,0 +1,112 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (e.g. 1.2.3)"
+        required: true
+        type: string
+      environment:
+        description: "Target environment"
+        required: false
+        default: "prod"
+        type: choice
+        options:
+          - prod
+          - dev
+      namespace:
+        description: "Kubernetes namespace"
+        required: false
+        default: "random-chess"
+        type: string
+      dry_run:
+        description: "Dry run only (no actual deploy)"
+        required: false
+        default: false
+        type: boolean
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to k3s
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'prod' }}
+    # For workflow_run trigger: only run on success
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    env:
+      ENVIRONMENT: ${{ github.event.inputs.environment || 'prod' }}
+      NAMESPACE: ${{ github.event.inputs.namespace || 'random-chess' }}
+      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            # Extract tag from the triggering release ref (refs/tags/vX.Y.Z)
+            RAW="${{ github.event.workflow_run.head_branch }}"
+            echo "value=${RAW#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Write kubeconfig
+        run: |
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
+
+      - name: Deploy via Helm
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY_FILE: ~/.ssh/deploy_key
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: |
+          EXTRA_ARGS=""
+          if [ "$DRY_RUN" = "true" ]; then
+            EXTRA_ARGS="--dry-run"
+          fi
+
+          VALUES_FILE="deploy/helm/values/prod.yaml"
+          POSTGRES_ARGS=""
+          if [ "$ENVIRONMENT" = "dev" ]; then
+            VALUES_FILE="deploy/helm/values/dev.yaml"
+            POSTGRES_ARGS="--postgres-password $POSTGRES_PASSWORD"
+          fi
+
+          ./hack/deploy.sh \
+            --image-tag "${{ steps.tag.outputs.value }}" \
+            --namespace "$NAMESPACE" \
+            --kubeconfig /tmp/kubeconfig \
+            --values "$VALUES_FILE" \
+            $POSTGRES_ARGS \
+            $EXTRA_ARGS
+
+      - name: Clean up credentials
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key /tmp/kubeconfig

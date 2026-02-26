@@ -1,0 +1,28 @@
+Random Chess Backend has been deployed!
+
+{{- if .Values.ingress.enabled }}
+
+The API is available at:
+{{- if .Values.ingress.tls.enabled }}
+  https://{{ .Values.ingress.host }}
+{{- else }}
+  http://{{ .Values.ingress.host }}
+{{- end }}
+
+{{- else }}
+
+To access the API, run:
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "random-chess-backend.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:{{ .Values.service.targetPort }}
+
+Then visit: http://localhost:8080/api/v1/healthz
+
+{{- end }}
+
+Health check endpoint: /api/v1/healthz
+
+API endpoints:
+  - GET  /api/v1/healthz
+  - GET  /api/v1/games/assigned
+  - GET  /api/v1/games/{game_id}
+  - POST /api/v1/games/{game_id}/moves

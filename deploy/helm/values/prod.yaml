@@ -1,0 +1,31 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/randomtoy/random-chess-backend
+  tag: ""  # set at deploy time via --set image.tag=<version>
+  pullPolicy: IfNotPresent
+
+env:
+  PORT: "8080"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+ingress:
+  enabled: true
+  className: traefik
+  host: api.random-chess.randomtoy.dev
+  path: /
+  pathType: Prefix
+  tls:
+    enabled: true
+    secretName: random-chess-tls
+
+database:
+  existingSecret: random-chess-db-secret
+  secretKey: DATABASE_URL

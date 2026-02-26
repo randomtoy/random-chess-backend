@@ -1,0 +1,30 @@
+{{- if or .Values.database.existingSecret .Values.database.url }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "random-chess-backend.fullname" . }}-migrate
+  labels:
+    {{- include "random-chess-backend.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "random-chess-backend.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: {{ include "random-chess-backend.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/migrate", "up"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "random-chess-backend.dbSecretName" . }}
+                  key: {{ .Values.database.secretKey }}
+{{- end }}

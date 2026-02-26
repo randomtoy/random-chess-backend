@@ -1,0 +1,29 @@
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  host: api.chess.randomtoy.dev
+  path: /
+  pathType: Prefix
+  tls:
+    enabled: true
+    secretName: random-chess-backend-tls-dev
+
+postgresql:
+  enabled: true
+  auth:
+    database: random_chess
+    username: random_chess
+    # Password sourced from K8s secret created by the deploy workflow
+    # from the GitHub environment secret POSTGRES_PASSWORD.
+    existingSecret: random-chess-backend-postgres-dev
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+
+database:
+  # The deploy workflow creates this secret with a DATABASE_URL key
+  # pointing at the bitnami postgresql service in the same namespace.
+  existingSecret: random-chess-backend-postgres-dev
+  secretKey: DATABASE_URL

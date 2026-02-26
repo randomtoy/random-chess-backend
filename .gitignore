@@ -1,0 +1,18 @@
+# Build output
+bin/
+*.out
+*.test
+coverage.*
+
+# Environment
+.env
+.env.*
+
+# Helm chart dependencies (fetched via helm dependency update / --dependency-update)
+deploy/helm/*/charts/
+deploy/helm/*/Chart.lock
+
+# Editor / tooling
+.vscode/
+.idea/
+.claude/
