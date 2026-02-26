@@ -12,6 +12,8 @@ ingress:
 
 postgresql:
   enabled: true
+  image:
+    tag: latest
   auth:
     database: random_chess
     username: random_chess
