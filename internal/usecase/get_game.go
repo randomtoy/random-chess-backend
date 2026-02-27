@@ -19,9 +19,9 @@ func NewGameGetter(store ports.GameStore, rl ports.RateLimiter) *GameGetter {
 	return &GameGetter{store: store, rl: rl}
 }
 
-func (g *GameGetter) GetGame(ctx context.Context, ip, token string, id uuid.UUID) (*game.Game, error) {
+func (g *GameGetter) GetGame(ctx context.Context, ip, token string, id uuid.UUID) (*game.Game, []game.MoveHistoryItem, error) {
 	if !g.rl.Allow(ip, token) {
-		return nil, ErrRateLimited
+		return nil, nil, ErrRateLimited
 	}
-	return g.store.GetByID(ctx, id)
+	return g.store.GetGameWithHistory(ctx, id)
 }

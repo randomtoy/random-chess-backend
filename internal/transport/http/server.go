@@ -12,13 +12,14 @@ func New(h *Handlers) *echo.Echo {
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{"https://chess.randomtoy.dev"},
 		AllowMethods: []string{"GET", "POST", "OPTIONS"},
-		AllowHeaders: []string{"Content-Type", "X-Client-Token"},
+		AllowHeaders: []string{"Content-Type", "X-Client-Token", "X-Client-Id"},
 	}))
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
 	e.GET("/api/v1/healthz", h.handleHealthz)
 	e.GET("/api/v1/games/assigned", h.handleGetAssigned)
+	e.GET("/api/v1/games/next", h.handleGetNext)
 	e.GET("/api/v1/games/:game_id", h.handleGetGame)
 	e.POST("/api/v1/games/:game_id/moves", h.handleSubmitMove)
 

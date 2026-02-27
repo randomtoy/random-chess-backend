@@ -12,6 +12,7 @@ import (
 type Status string
 
 const (
+	StatusWaiting   Status = "waiting"
 	StatusOngoing   Status = "ongoing"
 	StatusCheckmate Status = "checkmate"
 	StatusStalemate Status = "stalemate"
@@ -62,6 +63,19 @@ type MoveRecord struct {
 	CreatedAt time.Time
 }
 
+// MoveHistoryItem is one entry in a game's persisted move history.
+type MoveHistoryItem struct {
+	Ply       int
+	UCI       string
+	FromSq    string
+	ToSq      string
+	Promotion *string
+	ClientID  uuid.UUID
+	FENBefore string
+	FENAfter  string
+	CreatedAt time.Time
+}
+
 // NewGame creates a Game seeded from the standard starting position.
 func NewGame(id uuid.UUID, now time.Time) *Game {
 	cg := chess.NewGame(chess.UseNotation(chess.UCINotation{}))
@@ -97,7 +111,7 @@ func fromChessGame(id uuid.UUID, cg *chess.Game, now time.Time) *Game {
 //   - ErrInvalidUCI     — string is not valid UCI syntax
 //   - ErrIllegalMove    — syntactically valid but not legal in this position
 func (g *Game) ApplyMove(uci string, now time.Time) (*Game, MoveRecord, error) {
-	if g.Status != StatusOngoing {
+	if g.Status != StatusOngoing && g.Status != StatusWaiting {
 		return nil, MoveRecord{}, ErrGameNotOngoing
 	}
 

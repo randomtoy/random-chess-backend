@@ -45,6 +45,30 @@ func writeErr(c echo.Context, err error) error {
 			Status: http.StatusConflict,
 			Detail: "Game state changed; refresh and retry with new expected_version.",
 		})
+	case errors.Is(err, ports.ErrAlreadyMoved):
+		return c.JSON(http.StatusConflict, IllegalMoveProblem{
+			Problem: Problem{
+				Type:   errBase + "/already-moved",
+				Title:  "Conflict",
+				Status: http.StatusConflict,
+				Detail: "You have already made a move in this game.",
+			},
+			Code: "one_move_limit",
+		})
+	case errors.Is(err, ports.ErrNotAssigned):
+		return c.JSON(http.StatusForbidden, Problem{
+			Type:   errBase + "/not-assigned",
+			Title:  "Forbidden",
+			Status: http.StatusForbidden,
+			Detail: "You are not assigned to this game. Use GET /api/v1/games/next first.",
+		})
+	case errors.Is(err, ports.ErrNoGamesAvailable):
+		return c.JSON(http.StatusServiceUnavailable, Problem{
+			Type:   errBase + "/no-games",
+			Title:  "Service Unavailable",
+			Status: http.StatusServiceUnavailable,
+			Detail: "No games available. Try again shortly.",
+		})
 	case errors.Is(err, usecase.ErrRateLimited):
 		c.Response().Header().Set("Retry-After", "2")
 		return c.JSON(http.StatusTooManyRequests, Problem{

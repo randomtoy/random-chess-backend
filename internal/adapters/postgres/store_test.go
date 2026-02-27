@@ -175,3 +175,180 @@ func TestSaveIfVersion_Conflict(t *testing.T) {
 		t.Fatalf("want ErrVersionConflict, got %v", err)
 	}
 }
+
+// ── New integration tests ──────────────────────────────────────────────────────
+
+func TestHasActiveGames(t *testing.T) {
+	s := setupStore(t)
+	ctx := context.Background()
+
+	has, err := s.HasActiveGames(ctx)
+	if err != nil {
+		t.Fatalf("HasActiveGames: %v", err)
+	}
+	if has {
+		t.Fatal("expected no active games on empty DB")
+	}
+
+	if err := s.Insert(ctx, newTestGame(t)); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	has, err = s.HasActiveGames(ctx)
+	if err != nil {
+		t.Fatalf("HasActiveGames after insert: %v", err)
+	}
+	if !has {
+		t.Fatal("expected active games after insert")
+	}
+}
+
+func TestCreateWaitingBatch(t *testing.T) {
+	s := setupStore(t)
+	ctx := context.Background()
+
+	if err := s.CreateWaitingBatch(ctx, 5); err != nil {
+		t.Fatalf("CreateWaitingBatch: %v", err)
+	}
+
+	has, err := s.HasActiveGames(ctx)
+	if err != nil {
+		t.Fatalf("HasActiveGames: %v", err)
+	}
+	if !has {
+		t.Fatal("expected active games after batch creation")
+	}
+}
+
+func TestClaimNextGame_NeverRepeatsSameClient(t *testing.T) {
+	s := setupStore(t)
+	ctx := context.Background()
+
+	// Create 2 waiting games.
+	if err := s.CreateWaitingBatch(ctx, 2); err != nil {
+		t.Fatalf("batch: %v", err)
+	}
+
+	clientID := uuid.New()
+
+	g1, hist1, err := s.ClaimNextGame(ctx, clientID)
+	if err != nil {
+		t.Fatalf("claim1: %v", err)
+	}
+	if hist1 == nil {
+		t.Fatal("history must not be nil")
+	}
+
+	g2, _, err := s.ClaimNextGame(ctx, clientID)
+	if err != nil {
+		t.Fatalf("claim2: %v", err)
+	}
+
+	if g1.ID == g2.ID {
+		t.Fatalf("same client received the same game twice: %s", g1.ID)
+	}
+
+	// Third claim should fail — only 2 games exist.
+	_, _, err = s.ClaimNextGame(ctx, clientID)
+	if err != ports.ErrNoGamesAvailable {
+		t.Fatalf("want ErrNoGamesAvailable, got %v", err)
+	}
+}
+
+func TestPersistMove_Full(t *testing.T) {
+	s := setupStore(t)
+	ctx := context.Background()
+
+	if err := s.CreateWaitingBatch(ctx, 1); err != nil {
+		t.Fatalf("batch: %v", err)
+	}
+	clientID := uuid.New()
+	g, _, err := s.ClaimNextGame(ctx, clientID)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	newGame, rec, err := g.ApplyMove("e2e4", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	ply := newGame.PlyCount - 1
+
+	hist, err := s.PersistMove(ctx, g.ID, clientID, newGame, rec, ply)
+	if err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+	if len(hist) != 1 {
+		t.Fatalf("want 1 history item, got %d", len(hist))
+	}
+	if hist[0].UCI != "e2e4" {
+		t.Errorf("history uci: want e2e4, got %q", hist[0].UCI)
+	}
+
+	// Second move attempt by same client → ErrAlreadyMoved.
+	newGame2, rec2, err := newGame.ApplyMove("e7e5", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("apply2: %v", err)
+	}
+	_, err = s.PersistMove(ctx, g.ID, clientID, newGame2, rec2, newGame2.PlyCount-1)
+	if err != ports.ErrAlreadyMoved {
+		t.Fatalf("want ErrAlreadyMoved, got %v", err)
+	}
+}
+
+func TestPersistMove_NotAssigned(t *testing.T) {
+	s := setupStore(t)
+	ctx := context.Background()
+
+	g := newTestGame(t)
+	if err := s.Insert(ctx, g); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	unassigned := uuid.New()
+	newGame, rec, err := g.ApplyMove("e2e4", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	_, err = s.PersistMove(ctx, g.ID, unassigned, newGame, rec, 0)
+	if err != ports.ErrNotAssigned {
+		t.Fatalf("want ErrNotAssigned, got %v", err)
+	}
+}
+
+func TestGetGameWithHistory(t *testing.T) {
+	s := setupStore(t)
+	ctx := context.Background()
+
+	if err := s.CreateWaitingBatch(ctx, 1); err != nil {
+		t.Fatalf("batch: %v", err)
+	}
+	clientID := uuid.New()
+	g, _, err := s.ClaimNextGame(ctx, clientID)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	newGame, rec, err := g.ApplyMove("e2e4", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, err := s.PersistMove(ctx, g.ID, clientID, newGame, rec, 0); err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+
+	got, hist, err := s.GetGameWithHistory(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("getWithHistory: %v", err)
+	}
+	if got.StateVersion != 1 {
+		t.Errorf("state_version: want 1, got %d", got.StateVersion)
+	}
+	if len(hist) != 1 {
+		t.Fatalf("want 1 history item, got %d", len(hist))
+	}
+	if hist[0].Ply != 0 {
+		t.Errorf("ply: want 0, got %d", hist[0].Ply)
+	}
+}
