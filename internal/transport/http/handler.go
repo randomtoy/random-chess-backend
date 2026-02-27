@@ -82,10 +82,14 @@ func toGameJSON(g *game.Game, history []game.MoveHistoryItem) *gameJSON {
 	}
 }
 
-// parseClientID reads and validates the X-Client-Id header.
-// Returns uuid.Nil and writes a 400 response if the header is missing/invalid.
+// parseClientID reads and validates the client identity header.
+// It prefers X-Client-Id; falls back to X-Client-Token for backward compat
+// with older frontends that do not yet send X-Client-Id.
 func parseClientID(c echo.Context) (uuid.UUID, error) {
 	raw := c.Request().Header.Get("X-Client-Id")
+	if raw == "" {
+		raw = c.Request().Header.Get("X-Client-Token")
+	}
 	if raw == "" {
 		return uuid.Nil, c.JSON(http.StatusBadRequest, Problem{
 			Type:   errBase + "/missing-client-id",
@@ -127,16 +131,33 @@ func (h *Handlers) handleHealthz(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]bool{"ok": true})
 }
 
-// handleGetAssigned is the legacy endpoint — backward compatible, no client tracking.
+// handleGetAssigned is the legacy endpoint.
+// When the X-Client-Token is a valid UUID it delegates to the NextGame usecase
+// so the client gets registered in game_players and can subsequently submit moves.
 func (h *Handlers) handleGetAssigned(c echo.Context) error {
 	ip := c.RealIP()
 	token := c.Request().Header.Get("X-Client-Token")
 
+	if clientID, err := uuid.Parse(token); err == nil {
+		res, err := h.nextGame.GetNext(c.Request().Context(), ip, token, clientID)
+		if err != nil {
+			return writeErr(c, err)
+		}
+		c.Response().Header().Set("Cache-Control", "no-store")
+		return c.JSON(http.StatusOK, map[string]any{
+			"game": toGameJSON(res.Game, res.History),
+			"assignment": map[string]any{
+				"assignment_id": uuid.New().String(),
+				"assigned_at":   res.Game.CreatedAt,
+			},
+		})
+	}
+
+	// Fallback: non-UUID token — legacy path, no client tracking.
 	res, err := h.assigner.Assign(c.Request().Context(), ip, token)
 	if err != nil {
 		return writeErr(c, err)
 	}
-
 	c.Response().Header().Set("Cache-Control", "no-store")
 	return c.JSON(http.StatusOK, map[string]any{
 		"game": toGameJSON(res.Game, []game.MoveHistoryItem{}),
