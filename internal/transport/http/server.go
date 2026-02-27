@@ -9,6 +9,11 @@ import (
 func New(h *Handlers) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"https://chess.randomtoy.dev"},
+		AllowMethods: []string{"GET", "POST", "OPTIONS"},
+		AllowHeaders: []string{"Content-Type", "X-Client-Token"},
+	}))
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
